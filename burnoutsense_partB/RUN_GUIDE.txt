@@ -1,0 +1,213 @@
+================================================================================
+  BURNOTSENSE AI — PART B
+  Technical System Framework
+  Privacy-Aware Pipeline Demonstration
+================================================================================
+
+IMPORTANT ACADEMIC NOTE
+------------------------
+This is Part B of the MSc project. It demonstrates the technical
+pipeline using SIMULATED behavioral data.
+
+Part B does NOT make any real-world burnout accuracy claims.
+All genuine ML accuracy results are in Part A (BurnoutSense_PartA_Report.pdf).
+
+Part B shows:
+  - The monitoring agent pipeline works
+  - The Flask API handles concurrent requests
+  - MongoDB stores and retrieves data correctly
+  - The React dashboard updates in real time
+  - The system scales to 500+ concurrent agents
+  - Privacy-aware design is implemented correctly
+
+================================================================================
+FILE STRUCTURE
+================================================================================
+
+burnoutsense_partB/
+├── client/
+│   └── agent.py              ← Monitoring agent (privacy-aware)
+├── backend/
+│   └── app.py                ← Flask REST API (all endpoints)
+├── ml/
+│   └── simulate.py           ← Simulated data generator + predictor
+├── frontend/
+│   ├── src/App.js            ← React dashboard
+│   ├── package.json          ← npm dependencies
+│   └── nginx.conf            ← Nginx config for Docker
+├── tests/
+│   ├── test_api.py           ← API unit tests (pytest)
+│   └── scalability_test.py   ← Load tests (Locust)
+├── docker/
+│   ├── Dockerfile.backend    ← Backend container
+│   ├── Dockerfile.frontend   ← Frontend container
+│   └── Dockerfile.agent      ← Agent container
+├── docker-compose.yml        ← Full stack in one command
+├── requirements.txt          ← Python dependencies
+├── .env.example              ← Environment template
+└── RUN_GUIDE.txt             ← This file
+
+================================================================================
+QUICK START — 3 CMD WINDOWS
+================================================================================
+
+--- CMD 1: Backend API ---
+cd burnoutsense_partB
+pip install -r requirements.txt
+copy .env.example .env
+net start MongoDB
+cd backend
+python app.py
+
+Wait for:
+  * Running on http://127.0.0.1:5000
+
+--- CMD 2: Frontend Dashboard ---
+cd burnoutsense_partB/frontend
+npm install
+npm start
+
+Wait for:
+  Compiled successfully!
+  Local: http://localhost:3000
+
+--- CMD 3: Monitoring Agent ---
+cd burnoutsense_partB
+set EMPLOYEE_ID=emp_001
+set API_URL=http://localhost:5000
+set AGENT_TOKEN=test-token
+cd client
+python agent.py
+
+Wait for:
+  INFO - Agent initialised for: emp_001
+  INFO - Monitoring active. Press Ctrl+C to stop.
+
+================================================================================
+DOCKER — FULL STACK IN ONE COMMAND
+================================================================================
+
+Make sure Docker Desktop is running, then:
+
+  cd burnoutsense_partB
+  docker-compose up --build
+
+This starts:
+  - Backend API on port 5000
+  - Frontend dashboard on port 3000
+  - MongoDB on port 27017
+  - Monitoring agent (sends data every 30s)
+
+Stop with: Ctrl+C then docker-compose down
+
+================================================================================
+RUNNING TESTS
+================================================================================
+
+--- Unit Tests ---
+  cd burnoutsense_partB
+  pip install pytest pytest-flask
+  pytest tests/test_api.py -v
+
+Expected output:
+  PASSED tests/test_api.py::TestHealth::test_health_returns_200
+  PASSED tests/test_api.py::TestAuth::test_get_token_returns_200
+  PASSED tests/test_api.py::TestActivityLog::test_valid_payload_accepted
+  PASSED tests/test_api.py::TestPrediction::test_predict_returns_200
+  PASSED tests/test_api.py::TestAccessControl::test_employee_cannot_access_alerts
+  PASSED tests/test_api.py::TestConsent::test_consent_withdrawal_accepted
+  ... (20+ tests)
+
+--- Scalability Tests ---
+  pip install locust
+  locust -f tests/scalability_test.py --host=http://localhost:5000
+
+  Open browser: http://localhost:8089
+  Set users: 100, spawn rate: 10, click Start
+
+  Or headless (500 users, 60 seconds):
+  locust -f tests/scalability_test.py \
+    --host=http://localhost:5000 \
+    --users 500 --spawn-rate 50 \
+    --run-time 60s --headless
+
+================================================================================
+API ENDPOINTS
+================================================================================
+
+GET  /health                              Health check (no auth)
+POST /api/v1/auth/token                   Get JWT token
+POST /api/v1/activity/log                 Log behavioral data (employee)
+POST /api/v1/burnout/predict              Predict burnout (no auth)
+GET  /api/v1/burnout/score/:id            Get employee score (employee)
+GET  /api/v1/burnout/history/:id          Get score history (employee)
+GET  /api/v1/employees/list               List all employees (manager)
+GET  /api/v1/alerts/active                Get unread alerts (manager)
+PUT  /api/v1/alerts/:id/read              Mark alert read (manager)
+GET  /api/v1/dashboard/summary            Dashboard KPIs (manager)
+PUT  /api/v1/employees/:id/consent        Update consent (employee)
+
+================================================================================
+GETTING A JWT TOKEN FOR TESTING
+================================================================================
+
+Run this in CMD after the backend is running:
+
+  curl -X POST http://localhost:5000/api/v1/auth/token \
+    -H "Content-Type: application/json" \
+    -d "{\"employee_id\":\"emp_001\",\"role\":\"employee\"}"
+
+Copy the token from the response, then use it:
+
+  curl -X POST http://localhost:5000/api/v1/activity/log \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+    -d "{\"employee_id\":\"emp_001\",\"typing_speed_variation\":28.4,\"idle_time_pct\":43.2,\"session_duration_hrs\":6.5,\"break_irregularity_index\":3.2,\"work_hour_deviation\":1.5,\"task_completion_rate\":72.0}"
+
+================================================================================
+PRIVACY-AWARE FEATURES IMPLEMENTED
+================================================================================
+
+  1. Consent management
+     PUT /api/v1/employees/:id/consent
+     Setting consent_given=false deletes all employee data (right to erasure)
+
+  2. Role-based access control (RBAC)
+     Employee  → own data only
+     Manager   → team data (no individual keystroke data)
+     Admin     → full access
+
+  3. JWT authentication
+     8-hour token expiry
+     Bearer token required on all protected endpoints
+
+  4. Minimal data collection
+     6 timing metrics only
+     No keystroke content
+     No screen data
+     No personal communications
+
+  5. TLS ready
+     Use gunicorn + nginx + certbot in production
+     docker-compose includes nginx for frontend
+
+================================================================================
+SCALABILITY ARCHITECTURE
+================================================================================
+
+For production deployment on AWS:
+
+  Load Balancer (ALB)
+      ↓
+  EC2 Auto Scaling Group (t3.medium instances)
+      ↓
+  Flask API (gunicorn, 4 workers per instance)
+      ↓
+  MongoDB Atlas (cloud-managed, M10 cluster)
+
+Scaling triggers (CloudWatch):
+  - CPU > 70% → scale out
+  - CPU < 20% → scale in
+  - Target: handle 500+ concurrent agents
+
+================================================================================

@@ -1,0 +1,80 @@
+version: "3.8"
+
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/burnoutsense_db
+      - JWT_SECRET=${JWT_SECRET:-burnoutsense-dev-secret-2025}
+      - FLASK_ENV=development
+      - DEBUG=false
+      - PORT=5000
+      - ALLOWED_ORIGINS=http://localhost:3000,http://frontend:3000
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - burnout_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/Dockerfile.frontend
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - burnout_net
+
+  mongo:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - burnout_net
+
+  agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent
+    environment:
+      - EMPLOYEE_ID=demo_emp_001
+      - API_URL=http://backend:5000
+      - AGENT_TOKEN=demo-token
+      - SEND_INTERVAL=30
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - burnout_net
+
+volumes:
+  mongo_data:
+    driver: local
+
+networks:
+  burnout_net:
+    driver: bridge
